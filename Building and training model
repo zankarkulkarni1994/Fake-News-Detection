@@ -1,0 +1,61 @@
+#Loading the saved arrays
+import numpy as np
+X_val_ids = np.load('X_val_ids.npy')
+X_val_attention_mask = np.load('X_val_attention_mask.npy')
+X_test_ids = np.load('X_test_ids.npy')
+X_test_attention_mask = np.load('X_test_attention_mask.npy')
+X_train_ids = np.load('X_train_ids.npy')
+X_train_attention_mask = np.load('X_train_attention_mask.npy')
+y_train = np.load('y_train.npy')
+y_test = np.load('y_test.npy')
+y_val = np.load('y_val.npy')
+
+from transformers import BertTokenizer
+
+# Defining the model
+bert = TFBertModel.from_pretrained('bert-base-uncased')
+
+MAX_LEN = 100
+
+def get_model():
+    dropout_rate = 0.2
+
+    input_ids = Input(shape = (MAX_LEN,), dtype = tf.int32, name = 'input_ids')
+    input_mask = Input(shape = (MAX_LEN,), dtype = tf.int32, name = 'input_mask')
+
+    #num_layers_to_freeze = 12  # Example: Freeze the first 6 layers
+
+# Set the trainable property for each layer in the BERT encoder
+    #for layer in bert.layers[:num_layers_to_freeze]:
+        #layer.trainable = False
+
+    embeddings = bert([input_ids, input_mask])[1] #pooler output
+    #bert.trainable = False
+    
+    #model.bert.encoder.layer[1].trainable = False
+    #model.bert.encoder.layer[-1].trainable = False
+    print(embeddings)
+
+    out = Dropout(0.2)(embeddings)
+    
+    #64 units dense layer
+    out = Dense(64,activation = 'relu')(out)
+    out = Dropout(0.2)(out)
+
+    y = Dense(1,activation = 'sigmoid')(out)
+    
+    model = Model(inputs=[input_ids, input_mask], outputs=y)
+    model.layers[2].trainable = True
+    
+    #define optimizer
+    optimizer = Adam(learning_rate=1e-05, epsilon=1e-08,clipnorm=1.0)
+    
+    #complile the model
+    model.compile(optimizer = optimizer, loss = 'binary_crossentropy', metrics = 'accuracy')
+    
+    return model
+
+#plot the model architecture
+
+model = get_model()
+tf.keras.utils.plot_model(model)
