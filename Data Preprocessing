@@ -1,0 +1,76 @@
+# Load the "welfake" dataset
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+import tensorflow as tf
+import keras
+import gc
+!pip install transformers
+from keras.models import Model, Sequential
+from keras.layers import Input, Dense, Dropout, Embedding
+from sklearn.model_selection import train_test_split 
+from keras.preprocessing.text import Tokenizer
+from keras.callbacks import EarlyStopping
+from tensorflow.keras.optimizers import Adam
+from sklearn.model_selection import train_test_split,StratifiedKFold
+from sklearn.metrics import confusion_matrix, classification_report, f1_score
+from tensorflow.python.client import device_lib
+from transformers import AutoTokenizer, TFBertModel
+drive.mount('/content/drive')
+df = pd.read_csv('/content/drive/MyDrive/NLP/WELFake_Dataset.csv')
+
+
+df.dropna(subset = ['text', 'title'], inplace = True)
+df['text'] = df['title'] + ' ' + df['text']
+X = df['text']
+y = df['label']
+
+df['num_words'] = df['text'].apply(lambda x: len(x.split()))
+
+
+
+plt.figure(figsize = (8,5))
+sns.countplot(x = df['label'], palette = 'Set1', alpha = 0.8)
+plt.title('Distribution of Fake - 0 /Real - 1 News')
+
+plt.figure(figsize = (14,5))
+sns.histplot(df['num_words'], bins = range(1, 3000, 50), palette = 'Set1', alpha = 0.8)
+plt.title('Distribution of the News Words count')
+
+# Applying Tokenization on the dataset
+
+tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+MAX_LEN = 100
+#define tokenization function
+def get_tokens(X):
+    
+    X = tokenizer(
+                text = list(X),
+                add_special_tokens = True,
+                max_length = MAX_LEN,
+                truncation = True,
+                padding = True,
+                return_tensors = 'tf',
+                return_token_type_ids = False,
+                return_attention_mask = True,
+                verbose = True
+                )
+    
+    return X
+
+#split the train and test data
+from sklearn.model_selection import train_test_split
+SEED = 10
+x, X_test, y, y_test = train_test_split(X, y, stratify = y, test_size = 0.2, random_state = SEED)
+X_train, X_val, y_train, y_val = train_test_split(x, y, stratify = y, test_size = 0.1, random_state = SEED)
+
+#Tokenizing training dataset 
+
+X_train_seq = get_tokens(X_train)
+np.save('X_train_ids.npy', X_train_seq['input_ids'])
+np.save('X_train_attention_mask.npy', X_train_seq['attention_mask'])
+np.save('y_train.npy', y_train)
+np.save('y_test.npy', y_test)
+np.save('y_val.npy', y_val)
+
