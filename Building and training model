@@ -1,4 +1,94 @@
-#Loading the saved arrays
+# Installing and Importing Required Libraries
+!pip install transformers
+import numpy as np
+import pandas as pd
+from google.colab import drive
+import matplotlib.pyplot as plt
+import seaborn as sns
+import tensorflow as tf
+import keras
+import gc
+from keras.models import Model, Sequential
+from keras.layers import Input, Dense, Dropout, Embedding
+from sklearn.model_selection import train_test_split
+from keras.preprocessing.text import Tokenizer
+from keras.callbacks import EarlyStopping
+from tensorflow.keras.optimizers import Adam
+from sklearn.model_selection import train_test_split,StratifiedKFold
+from sklearn.metrics import confusion_matrix, classification_report, f1_score
+from tensorflow.python.client import device_lib
+from transformers import AutoTokenizer, TFBertModel
+
+#Mounting Drive Location where raw dataset is located
+drive.mount('/content/drive')
+df = pd.read_csv('/content/drive/MyDrive/NLP/WELFake_Dataset.csv')
+
+# Performing data cleaning.
+df.dropna(subset = ['text', 'title'], inplace = True)
+df['text'] = df['title'] + ' ' + df['text']
+
+X = df['text']
+y = df['label']
+
+# Counting the number of words on each row present in the corpus
+df['num_words'] = df['text'].apply(lambda x: len(x.split()))
+
+# Checking data balance with regards to number of labels in each category
+plt.figure(figsize = (8,5))
+sns.countplot(x = df['label'], palette = 'Set1', alpha = 0.8)
+plt.title('Distribution of Fake - 0 /Real - 1 News')
+
+# Plotting the number of words for each news in the dataset.
+.figure(figsize = (14,5))
+sns.histplot(df['num_words'], bins = range(1, 3000, 50), palette = 'Set1', alpha = 0.8)
+plt.title('Distribution of the News Words count')
+
+# Applying Tokenization on the dataset using BERT tokenizer.
+
+tokenizer = AutoTokenizer.from_pretrained('bert-base-uncased')
+MAX_LEN = 100
+#define tokenization function
+def get_tokens(X):
+
+    X = tokenizer(
+                text = list(X),
+                add_special_tokens = True,
+                max_length = MAX_LEN,
+                truncation = True,
+                padding = True,
+                return_tensors = 'tf',
+                return_token_type_ids = False,
+                return_attention_mask = True,
+                verbose = True
+                )
+
+    return X
+#split the dataset into train, test and validation data: 20% Test, 72% Training and 8% Validation data
+from sklearn.model_selection import train_test_split
+SEED = 10
+x, X_test, y, y_test = train_test_split(X, y, stratify = y, test_size = 0.2, random_state = SEED)
+X_train, X_val, y_train, y_val = train_test_split(x, y, stratify = y, test_size = 0.1, random_state = SEED)
+
+# Applying tokenization on the training dataset and saving the tokenized dataset as NumPy arrays.
+
+X_train_seq = get_tokens(X_train)
+np.save('X_train_ids.npy', X_train_seq['input_ids'])
+np.save('X_train_attention_mask.npy', X_train_seq['attention_mask'])
+np.save('y_train.npy', y_train)
+np.save('y_test.npy', y_test)
+np.save('y_val.npy', y_val)
+
+# Applying tokenization on the test dataset and saving the tokenized dataset as NumPy arrays.
+X_test_seq = get_tokens(X_test)
+np.save('X_test_ids.npy', X_test_seq['input_ids'])
+np.save('X_test_attention_mask.npy', X_test_seq['attention_mask'])
+
+# Applying tokenization on the validation dataset and saving the tokenized dataset as NumPy arrays.
+X_val_seq = get_tokens(X_val)
+np.save('X_val_ids.npy', X_val_seq['input_ids'])
+np.save('X_val_attention_mask.npy', X_val_seq['attention_mask'])
+
+#Loading the saved test, train and validation arrays
 import numpy as np
 X_val_ids = np.load('X_val_ids.npy')
 X_val_attention_mask = np.load('X_val_attention_mask.npy')
@@ -10,52 +100,141 @@ y_train = np.load('y_train.npy')
 y_test = np.load('y_test.npy')
 y_val = np.load('y_val.npy')
 
+import pandas as pd
+import numpy as np
 from transformers import BertTokenizer
 
-# Defining the model
+# Importing pretrained BERT model for text classification
 bert = TFBertModel.from_pretrained('bert-base-uncased')
 
+#defining maximum length for each text
 MAX_LEN = 100
 
+# Defining the classifier model
 def get_model():
     dropout_rate = 0.2
 
     input_ids = Input(shape = (MAX_LEN,), dtype = tf.int32, name = 'input_ids')
     input_mask = Input(shape = (MAX_LEN,), dtype = tf.int32, name = 'input_mask')
-
-    #num_layers_to_freeze = 12  # Example: Freeze the first 6 layers
-
-# Set the trainable property for each layer in the BERT encoder
-    #for layer in bert.layers[:num_layers_to_freeze]:
-        #layer.trainable = False
-
-    embeddings = bert([input_ids, input_mask])[1] #pooler output
-    #bert.trainable = False
-    
-    #model.bert.encoder.layer[1].trainable = False
-    #model.bert.encoder.layer[-1].trainable = False
+    embeddings = bert([input_ids, input_mask])[1] #Converting text into embeddings
     print(embeddings)
-
     out = Dropout(0.2)(embeddings)
-    
     #64 units dense layer
     out = Dense(64,activation = 'relu')(out)
     out = Dropout(0.2)(out)
-
     y = Dense(1,activation = 'sigmoid')(out)
-    
     model = Model(inputs=[input_ids, input_mask], outputs=y)
     model.layers[2].trainable = True
-    
     #define optimizer
     optimizer = Adam(learning_rate=1e-05, epsilon=1e-08,clipnorm=1.0)
-    
     #complile the model
     model.compile(optimizer = optimizer, loss = 'binary_crossentropy', metrics = 'accuracy')
-    
     return model
 
 #plot the model architecture
-
 model = get_model()
 tf.keras.utils.plot_model(model)
+
+#Training the model
+
+epochs = 3  # Adjust as needed
+history = model.fit(
+    [X_train_ids, X_train_attention_mask],
+    y_train,
+    validation_data=([X_val_ids, X_val_attention_mask], y_val),
+    epochs=epochs,
+    batch_size=64 # Adjust as needed
+)
+
+#Saving the model
+model.save('NLP_BERT.h5')
+
+#Generating model summary
+model.summary()
+
+#Importing required libraries to evaluate model performance
+import time
+from sklearn.metrics import accuracy_score, roc_auc_score, precision_score, recall_score, classification_report, roc_curve
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_auc_score, roc_curve
+
+
+# Get false positive rate, true positive rate, and threshold values
+
+def evaluate_model(predict_fun, X_train, y_train, X_test, y_test):
+    '''
+    Evaluate the BERT model, both training and testing accuracies are reported.
+    '''
+    # Make predictions on training data
+    yhat_train =  np.where(model.predict({'input_ids':X_train_ids,'input_mask':X_train_attention_mask}) >=0.5,1,0)
+    train_acc = accuracy_score(y_train, yhat_train)
+
+    # Make predictions on testing data
+    yhat =  np.where(model.predict({'input_ids':X_test_ids,'input_mask':X_test_attention_mask}) >=0.5,1,0)
+    test_acc = accuracy_score(y_test, yhat)
+
+    # Calculate other metrics
+    roc_auc = roc_auc_score(y_test, yhat)
+    precision = precision_score(y_test, yhat)
+    recall = recall_score(y_test, yhat)
+    cr = classification_report(y_test,yhat)
+
+
+    fpr, tpr, thresholds = roc_curve(y_test, yhat)
+    plt.figure()
+    plt.plot(fpr, tpr, label='ROC curve (AUC = {:.2f})'.format(roc_auc))
+    plt.plot([0, 1], [0, 1], linestyle='--', color='r', label='Random')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver Operating Characteristic (ROC)')
+    plt.legend()
+    plt.show()
+
+
+    return train_acc, test_acc, cr, roc_auc
+
+# Evaluate the BERT model
+start_time = time.time()
+train_acc, test_acc, cr, roc_auc_sc = evaluate_model(model.predict, [X_train_ids, X_train_attention_mask], y_train, [X_test_ids, X_test_attention_mask], y_test)
+end_time = time.time()
+
+print("Training Accuracy: {:.2f}%".format(train_acc * 100))
+print("Testing Accuracy: {:.2f}%".format(test_acc * 100))
+print("Classification Report:\n", cr)
+print("AUC score:", roc_auc_sc)
+print("Total time required for testing:", end_time - start_time)
+
+import matplotlib.pyplot as plt
+
+def plot_training_history(history):
+    # Retrieve the training history
+    loss = history.history['loss']
+    val_loss = history.history['val_loss']
+    accuracy = history.history['accuracy']
+    val_accuracy = history.history['val_accuracy']
+    epochs = range(1, len(loss) + 1)
+
+    # Plotting the training and validation loss
+    plt.figure(figsize=(10, 4))
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs, loss, 'b', label='Training loss')
+    plt.plot(epochs, val_loss, 'r', label='Validation loss')
+    plt.title('Training and Validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+
+    # Plotting the training and validation accuracy
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs, accuracy, 'b', label='Training accuracy')
+    plt.plot(epochs, val_accuracy, 'r', label='Validation accuracy')
+    plt.title('Training and Validation Accuracy')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend()
+
+    # Show the plots
+    plt.tight_layout()
+    plt.show()
+
+    plot_training_history(history)
